@@ -1,17 +1,9 @@
 #name=_Launchpad Toggler
 #url=www.jammingsignal.com
 
-import patterns
-import channels
-import mixer
 import device
 import transport
-import arrangement
 import general
-import launchMapPages
-import playlist
-import ui
-import screen
 import midi
 import utils
 from enum import Enum   # Not included with FL by default - you need to add enum.py and types.py to C:\Program Files\Image-Line\Shared\Python\Lib (or equivalent)
@@ -34,6 +26,8 @@ class States(Enum):
     Off   = 3
 
 AllStates = [States.Never] * 80
+
+Playing = False
 
 # Helper Functions =========================
    
@@ -75,7 +69,24 @@ def OnInit():
     print('Init complete')
 
 def OnDeInit():
-	print('Deinit complete')
+    Reset()
+    print('Deinit complete')
+    
+def OnIdle():
+    global Playing
+
+    playing_now = transport.isPlaying()
+    
+    if playing_now:
+        if not Playing:
+            print('Playback Started')
+            Reset()
+    else:
+        if Playing:    
+            print('Playback Stopped')
+            Reset()
+            
+    Playing = playing_now
 
 # Incoming
 def OnMidiMsg(event):
