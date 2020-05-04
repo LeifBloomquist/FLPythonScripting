@@ -55,18 +55,18 @@ def NextState(num):
         AllStates[num] = States.On
     else:
         AllStates[num] = States.Off
+        
+    return AllStates[num]
 
-def ShowState(row, col, num):
-    newstate = AllStates[num]
-    
-    if newstate == States.Never:
+def ShowState(row, col, state):    
+    if state == States.Never:
         SetLaunchPixel(row, col, Colors.Off)
-    elif newstate == States.On:
+    elif state == States.On:
         SetLaunchPixel(row, col, Colors.GreenFull)
-    elif newstate == States.Off:
+    elif state == States.Off:
         SetLaunchPixel(row, col, Colors.RedLow)
     else:
-        SetLaunchPixel(row, col, Colors.AmberLow)
+        SetLaunchPixel(row, col, Colors.AmberLow)  # Error
 
 # Events =========================
 
@@ -79,16 +79,38 @@ def OnDeInit():
 
 # Incoming
 def OnMidiMsg(event):
-    event.handled = True
-    # print ("MIDI IN :: {:X} {:X} {:2X} {}".format(event.status, event.data1, event.data2,  EventNameT[(event.status - 0x80) // 16] + ': '+  utils.GetNoteName(event.data1)))    
     
-    if event.data2 == 0:  # Only work on button release
+    print ("RAW MIDI IN :: {:X} {:X} {:2X} {}".format(event.status, event.data1, event.data2,  EventNameT[(event.status - 0x80) // 16] + ': '+  utils.GetNoteName(event.data1)))    
+    
+    if event.data2 == 0:  # Only operate on button release
         row = (event.note & 0xF0) >> 4
         col = (event.note & 0x0F)
         num = (row*8)+col
         # print("vals=", event.note, row, col, num)
-        NextState(num)    
-        ShowState(row, col, num)        
+        
+        newstate = NextState(num)    
+        ShowState(row, col, newstate)       
+        
+        channel = event.status & 0x0F
+        event.status = midi.MIDI_CONTROLCHANGE | channel        
+        
+        event.handled = False   # To allow passthru
+        
+        if newstate == States.On:
+            event.data1 = event.data1  # For now, leave unchanged
+            event.data2 = 0x7F         # Maximum
+        
+        elif newstate == States.Off:         
+            event.data1 = event.data1  # For now, leave unchanged
+            event.data2 = 0x00         # Off
+        
+        else:  # Should not be possible, treat as error and ignore
+            event.handled = True;
+        
+        print (">>>> NEW MIDI IN :: {:X} {:X} {:2X} {}".format(event.status, event.data1, event.data2,  EventNameT[(event.status - 0x80) // 16] + ': '+  utils.GetNoteName(event.data1)))    
+    else:
+        event.handled = True  # Filter out button down
+        
         
         
 # Outgoing - Ignore
