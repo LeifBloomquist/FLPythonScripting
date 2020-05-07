@@ -21,9 +21,9 @@ class Colors(Enum):
     GreenFull  = 0x3C
 
 class States(Enum):
-    Never = 1
-    On    = 2
-    Off   = 3
+    Never = 0
+    On    = 1
+    Off   = 2
 
 AllStates = [States.Never] * 80
 
@@ -34,11 +34,14 @@ Playing = False
 def Reset():
     if device.isAssigned():
        device.midiOutMsg(0xB0)
-       device.midiOutMsg(0x0300B0)  
+       device.midiOutMsg(0x0300B0)
 
+def SendMIDI(command, channel, data1, data2):
+     device.midiOutMsg((command | channel) + (data1 << 8) + (data2<<16));
+     
 def SetLaunchPixel(row, col, color):
     Key = (0x10 * row) + col 
-    device.midiOutMsg(midi.MIDI_NOTEON + (Key << 8) + (color.value<<16));
+    SendMIDI(midi.MIDI_NOTEON, 0, Key, color.value)
 
 def NextState(num):
     if AllStates[num] == States.Never:
@@ -62,14 +65,32 @@ def ShowState(row, col, state):
     else:
         SetLaunchPixel(row, col, Colors.AmberLow)  # Error
 
+# Sends Mute *to* FL studio
+def SendMute(num):
+    #e = eventData() ????   Not sure how to do this.  TODO
+    pass
+     
+def MuteRow(row):
+    for col in range(8):
+        num = (row*8)+col
+        AllStates[num] = States.Never
+        ShowState(row, col, States.Never)
+        SendMute(num)
+
+def MuteAll():
+    for row in range(8):
+        MuteRow(row)    
+
 # Events =========================
 
 def OnInit():    
     Reset()
+    MuteAll()
     print('Init complete')
 
 def OnDeInit():
     Reset()
+    MuteAll()
     print('Deinit complete')
     
 def OnIdle():
@@ -81,6 +102,7 @@ def OnIdle():
         if not Playing:
             print('Playback Started')
             Reset()
+            MuteAll()            
     else:
         if Playing:    
             print('Playback Stopped')
@@ -89,41 +111,73 @@ def OnIdle():
     Playing = playing_now
 
 # Incoming
-def OnMidiMsg(event):
+def OnMidiMsg(event):    
+    #print ("RAW MIDI IN :: {:X} {:d} {:2X} {}".format(event.status, event.data1, event.data2,  EventNameT[(event.status - 0x80) // 16] + ': '+  utils.GetNoteName(event.data1)))        
     
-    print ("RAW MIDI IN :: {:X} {:X} {:2X} {}".format(event.status, event.data1, event.data2,  EventNameT[(event.status - 0x80) // 16] + ': '+  utils.GetNoteName(event.data1)))    
+    channel = event.status & 0x0F
+    command = event.status & 0xF0
     
     if event.data2 == 0:  # Only operate on button release
-        row = (event.note & 0xF0) >> 4
-        col = (event.note & 0x0F)
-        num = (row*8)+col
-        # print("vals=", event.note, row, col, num)
+    
+        # Top buttons get special handling in HandleCC() below
+        if command == midi.MIDI_CONTROLCHANGE:
+            HandleCC(event)
+            return
+    
+        # Grid and side buttons
+        else: # if command == midi.MIDI_NOTEON:
+            row = (event.note & 0xF0) >> 4
+            col = (event.note & 0x0F)
+            num = (row*8)+col
+            # print("vals=", event.note, row, col, num)
+            
+            # Side buttons have special meaning (mute all in row)
+            if col == 8:
+                MuteRow(row)
+                event.handled = True
+                return
+            
+            newstate = NextState(num)    
+            ShowState(row, col, newstate)               
+           
+            event.status = midi.MIDI_CONTROLCHANGE | channel        
+            event.data1 = num    # Remap to button number
+            
+            event.handled = False   # To allow passthru of modified event
+            
+            if newstate == States.On:
+                event.data2 = 0x7F         # Maximum
+            
+            elif newstate == States.Off:
+                event.data2 = 0x00         # Off
+            
+            else:  # Should not be possible, treat as error and ignore
+                event.handled = True
         
-        newstate = NextState(num)    
-        ShowState(row, col, newstate)       
-        
-        channel = event.status & 0x0F
-        event.status = midi.MIDI_CONTROLCHANGE | channel        
-        
-        event.handled = False   # To allow passthru
-        
-        if newstate == States.On:
-            event.data1 = event.data1  # For now, leave unchanged
-            event.data2 = 0x7F         # Maximum
-        
-        elif newstate == States.Off:         
-            event.data1 = event.data1  # For now, leave unchanged
-            event.data2 = 0x00         # Off
-        
-        else:  # Should not be possible, treat as error and ignore
-            event.handled = True;
-        
-        print (">>>> NEW MIDI IN :: {:X} {:X} {:2X} {}".format(event.status, event.data1, event.data2,  EventNameT[(event.status - 0x80) // 16] + ': '+  utils.GetNoteName(event.data1)))    
+        #print ("NEW MIDI IN :: {:X} {:X} {:2X} {} <<<<".format(event.status, event.data1, event.data2,  EventNameT[(event.status - 0x80) // 16] + ': '+  utils.GetNoteName(event.data1)))    
     else:
         event.handled = True  # Filter out button down
         
-        
-        
+# Incoming CCs (Top Buttons)
+def HandleCC(event):          
+    event.handled = True
+    button = event.note
+    
+    #if button == 0x68:  # up    
+    #if button == 0x68:  # up   
+    
+    if button == 0x6C:  # Session
+        pass
+      
 # Outgoing - Ignore
 def OnMidiOutMsg(event):
-    event.handled = True    
+    event.handled = True
+
+beatdict = { 
+    0: Colors.AmberLow,
+    1: Colors.GreenFull,
+    2: Colors.YellowFull
+}
+    
+def OnUpdateBeatIndicator(value):
+    SendMIDI(midi.MIDI_CONTROLCHANGE, 0, 0x6C, beatdict[value].value)
