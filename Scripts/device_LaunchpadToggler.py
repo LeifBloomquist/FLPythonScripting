@@ -37,7 +37,7 @@ def Reset():
        device.midiOutMsg(0x0300B0)
 
 def SendMIDI(command, channel, data1, data2):
-     device.midiOutMsg((command | channel) + (data1 << 8) + (data2<<16));
+     device.midiOutMsg((command | channel) + (data1 << 8) + (data2<<16))
      
 def SetLaunchPixel(row, col, color):
     Key = (0x10 * row) + col 
@@ -66,31 +66,34 @@ def ShowState(row, col, state):
         SetLaunchPixel(row, col, Colors.AmberLow)  # Error
 
 # Sends Mute *to* FL studio
-def SendMute(num):
-    #e = eventData() ????   Not sure how to do this.  TODO
-    pass
+def SendMute(num, event):  
+    event.status = midi.MIDI_CONTROLCHANGE | 0x00  #channel
+    event.data1 = num
+    event.data2 = 0x00
+    device.processMIDICC(event)
+    event.handled = False  # For next iteration
      
-def MuteRow(row):
+def MuteRow(row, event):
     for col in range(8):
         num = (row*8)+col
         AllStates[num] = States.Never
         ShowState(row, col, States.Never)
-        SendMute(num)
+        SendMute(num, event)
 
-def MuteAll():
+def MuteAll(event):
     for row in range(8):
-        MuteRow(row)    
+        MuteRow(row, event)
 
 # Events =========================
 
 def OnInit():    
     Reset()
-    MuteAll()
+    #MuteAll()
     print('Init complete')
 
 def OnDeInit():
     Reset()
-    MuteAll()
+    #MuteAll()
     print('Deinit complete')
     
 def OnIdle():
@@ -102,7 +105,7 @@ def OnIdle():
         if not Playing:
             print('Playback Started')
             Reset()
-            MuteAll()            
+            #MuteAll()            
     else:
         if Playing:    
             print('Playback Stopped')
@@ -133,10 +136,11 @@ def OnMidiMsg(event):
             
             # Side buttons have special meaning (mute all in row)
             if col == 8:
-                MuteRow(row)
+                MuteRow(row, event)
                 event.handled = True
                 return
             
+            # Grid buttons
             newstate = NextState(num)    
             ShowState(row, col, newstate)               
            
@@ -159,15 +163,22 @@ def OnMidiMsg(event):
         event.handled = True  # Filter out button down
         
 # Incoming CCs (Top Buttons)
-def HandleCC(event):          
+def HandleCC(event):     
+    global Playing
+     
     event.handled = True
     button = event.note
     
-    #if button == 0x68:  # up    
-    #if button == 0x68:  # up   
+    #if button == 0x68:  # Up
     
     if button == 0x6C:  # Session
-        pass
+        if Playing:
+            transport.stop()            
+        else:
+            transport.start()
+            
+        MuteAll(event)
+            
       
 # Outgoing - Ignore
 def OnMidiOutMsg(event):
