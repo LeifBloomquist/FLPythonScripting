@@ -6,6 +6,7 @@ import transport
 import general
 import midi
 import utils
+import ui
 from enum import Enum   # Not included with FL by default - you need to add enum.py and types.py to C:\Program Files\Image-Line\Shared\Python\Lib (or equivalent)
 
 EventNameT = ['Note Off', 'Note On ', 'Key Aftertouch', 'Control Change','Program Change',  'Channel Aftertouch', 'Pitch Bend', 'System Message' ]
@@ -79,10 +80,12 @@ def MuteRow(row, event):
         AllStates[num] = States.Never
         ShowState(row, col, States.Never)
         SendMute(num, event)
+    ui.setHintMsg("Muted Row " + str(row))
 
 def MuteAll(event):
     for row in range(8):
         MuteRow(row, event)
+    ui.setHintMsg("Muted All")
 
 # Events =========================
 
@@ -90,6 +93,7 @@ def OnInit():
     Reset()
     #MuteAll()
     print('Init complete')
+    ui.setHintMsg("Launchpad Toggler Init")
 
 def OnDeInit():
     Reset()
@@ -157,6 +161,8 @@ def OnMidiMsg(event):
             
             else:  # Should not be possible, treat as error and ignore
                 event.handled = True
+        
+            ui.setHintMsg("Set " + str(num) + "=" + hex(event.data2))
         
         #print ("NEW MIDI IN :: {:X} {:X} {:2X} {} <<<<".format(event.status, event.data1, event.data2,  EventNameT[(event.status - 0x80) // 16] + ': '+  utils.GetNoteName(event.data1)))    
     else:
