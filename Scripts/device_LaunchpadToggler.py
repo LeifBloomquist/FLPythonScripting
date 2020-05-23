@@ -68,6 +68,7 @@ def ShowState(row, col, state):
 
 # Sends Mute *to* FL studio
 def SendMute(num, event):  
+    event.handled = False
     event.status = midi.MIDI_CONTROLCHANGE | 0x00  #channel
     event.data1 = num
     event.data2 = 0x00
@@ -87,7 +88,7 @@ def MuteAll(event):
         MuteRow(row, event)
     ui.setHintMsg("Muted All")
 
-# Events =========================
+# Events ==================================================================
 
 def OnInit():    
     Reset()
@@ -118,8 +119,7 @@ def OnIdle():
     Playing = playing_now
 
 # Incoming
-def OnMidiMsg(event):    
-    #print ("RAW MIDI IN :: {:X} {:d} {:2X} {}".format(event.status, event.data1, event.data2,  EventNameT[(event.status - 0x80) // 16] + ': '+  utils.GetNoteName(event.data1)))        
+def OnMidiMsg(event):
     
     channel = event.status & 0x0F
     command = event.status & 0xF0
@@ -136,7 +136,6 @@ def OnMidiMsg(event):
             row = (event.note & 0xF0) >> 4
             col = (event.note & 0x0F)
             num = (row*8)+col
-            # print("vals=", event.note, row, col, num)
             
             # Side buttons have special meaning (mute all in row)
             if col == 8:
@@ -167,15 +166,13 @@ def OnMidiMsg(event):
         
             ui.setHintMsg("Set " + str(num) + " to " + state)
         
-        #print ("NEW MIDI IN :: {:X} {:X} {:2X} {} <<<<".format(event.status, event.data1, event.data2,  EventNameT[(event.status - 0x80) // 16] + ': '+  utils.GetNoteName(event.data1)))    
     else:
         event.handled = True  # Filter out button down
         
 # Incoming CCs (Top Buttons)
 def HandleCC(event):     
-    global Playing
-     
-    event.handled = True
+    global Playing     
+    
     button = event.note
     
     #if button == 0x68:  # Up
@@ -187,6 +184,8 @@ def HandleCC(event):
             transport.start()
             
         MuteAll(event)
+        
+    event.handled = True
             
       
 # Outgoing - Ignore
