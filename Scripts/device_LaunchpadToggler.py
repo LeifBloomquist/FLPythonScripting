@@ -152,17 +152,20 @@ def OnMidiMsg(event):
             event.data1 = num    # Remap to button number
             
             event.handled = False   # To allow passthru of modified event
+            state = "--"
             
             if newstate == States.On:
-                event.data2 = 0x7F         # Maximum
+                event.data2 = 0x7F         # Maximum                
+                state = "On"
             
             elif newstate == States.Off:
                 event.data2 = 0x00         # Off
+                state = "Off"
             
             else:  # Should not be possible, treat as error and ignore
                 event.handled = True
         
-            ui.setHintMsg("Set " + str(num) + "=" + hex(event.data2))
+            ui.setHintMsg("Set " + str(num) + " to " + state)
         
         #print ("NEW MIDI IN :: {:X} {:X} {:2X} {} <<<<".format(event.status, event.data1, event.data2,  EventNameT[(event.status - 0x80) // 16] + ': '+  utils.GetNoteName(event.data1)))    
     else:
