@@ -25,12 +25,18 @@ class States(Enum):
     Never = 0
     On    = 1
     Off   = 2
+    
+class Modes(Enum):
+    Default = 0
+    User1   = 1
+    User2   = 2
 
-AllStates = [States.Never] * 80
-
+AllStates = [States.Never] * 64
 Playing = False
+Mode = Modes.Default;
 
-# Helper Functions =========================
+
+# Helper Functions ==================================================================
    
 def Reset():
     if device.isAssigned():
@@ -71,10 +77,21 @@ def SendMute(num, event):
     event.handled = False
     event.status = midi.MIDI_CONTROLCHANGE | 0x00  #channel
     event.data1 = num
-    event.data2 = 0x00
+    event.data2 = 0x00   
+    device.processMIDICC(event)    
+    event.handled = False  # For next iteration
+
+# Sends Unmute *to* FL studio
+# This function does not seem to work.  Always sends 00 in data2???
+def SendUnmute(num, event):  
+    event.handled = False
+    event.status = midi.MIDI_CONTROLCHANGE | 0x00  #channel
+    event.data1 = num
+    event.data2 = 0x7F
+    print("----" + str(event.data2))
     device.processMIDICC(event)
     event.handled = False  # For next iteration
-     
+
 def MuteRow(row, event):
     for col in range(8):
         num = (row*8)+col
@@ -82,6 +99,14 @@ def MuteRow(row, event):
         ShowState(row, col, States.Never)
         SendMute(num, event)
     ui.setHintMsg("Muted Row " + str(row))
+    
+def UnmuteRow(row, event):
+    for col in range(8):
+        num = (row*8)+col
+        AllStates[num] = States.On
+        ShowState(row, col, States.On)
+        SendUnmute(num, event)
+    ui.setHintMsg("Unmuted Row " + str(row))
 
 def MuteAll(event):
     for row in range(8):
@@ -90,13 +115,15 @@ def MuteAll(event):
 
 # Events ==================================================================
 
-def OnInit():    
+def OnInit(): 
+    transport.stop()
     Reset()
     #MuteAll()
     print('Init complete')
     ui.setHintMsg("Launchpad Toggler Init")
 
 def OnDeInit():
+    transport.stop()
     Reset()
     #MuteAll()
     print('Deinit complete')
@@ -124,18 +151,30 @@ def OnMidiMsg(event):
     channel = event.status & 0x0F
     command = event.status & 0xF0
     
+    row = (event.note & 0xF0) >> 4
+    col = (event.note & 0x0F)
+    num = (row*8)+col
+    
+    # Top buttons get special handling in HandleCC() below        
+    if command == midi.MIDI_CONTROLCHANGE:
+        HandleCC(event)
+        return
+
+    # Don't do anything unless playing
+    if not Playing:
+        ui.setHintMsg("Ignored - not playing")
+        event.handled = True
+        return
+    
+    # All other buttons
+    if (Mode == Modes.Default):
+        HandleDefaultMode(event, channel, num, row, col)
+    elif (Mode == Modes.User1):
+        HandleUser1Mode(event, channel, num, row, col)
+        
+def HandleDefaultMode(event, channel, num, row, col):
+    
     if event.data2 == 0:  # Only operate on button release
-    
-        # Top buttons get special handling in HandleCC() below
-        if command == midi.MIDI_CONTROLCHANGE:
-            HandleCC(event)
-            return
-    
-        # Grid and side buttons
-        else: # if command == midi.MIDI_NOTEON:
-            row = (event.note & 0xF0) >> 4
-            col = (event.note & 0x0F)
-            num = (row*8)+col
             
             # Side buttons have special meaning (mute all in row)
             if col == 8:
@@ -154,11 +193,11 @@ def OnMidiMsg(event):
             state = "--"
             
             if newstate == States.On:
-                event.data2 = 0x7F         # Maximum                
+                event.data2 = 0x3F         # Maximum                
                 state = "On"
             
             elif newstate == States.Off:
-                event.data2 = 0x00         # Off
+                event.data2 = 0x20         # Off
                 state = "Off"
             
             else:  # Should not be possible, treat as error and ignore
@@ -168,25 +207,69 @@ def OnMidiMsg(event):
         
     else:
         event.handled = True  # Filter out button down
-        
+
+
+def HandleUser1Mode(event, channel, num, row, col):
+
+   # Side buttons have special meaning (mute all in row)
+    if col == 8:
+#        if event.data2 == 0x7F:  # Button Press                    
+#            UnmuteRow(row, event)
+        if event.data2 == 0x00:  # Release
+            MuteRow(row, event)
+        event.handled = True
+        return
+
+    # Grid buttons
+    state = "--"
+    
+    event.status = midi.MIDI_CONTROLCHANGE | channel
+    event.data1 = num    # Remap to button number
+    
+    if event.data2 == 0x7F:  # Button Press
+        ShowState(row, col, States.On)
+        state = "On"
+    
+    elif event.data2 == 0:   # Button Release
+        ShowState(row, col, States.Off)
+        state = "Off"
+    
+    else:  # Should not be possible, treat as error and ignore
+        event.handled = True    
+        return
+            
+    event.handled = False   # To allow passthru of modified event        
+    ui.setHintMsg("Set " + str(num) + " to " + state)
+   
 # Incoming CCs (Top Buttons)
 def HandleCC(event):     
-    global Playing     
+    global Playing
+    global Mode
     
-    button = event.note
-    
-    #if button == 0x68:  # Up
-    
-    if button == 0x6C:  # Session
-        if Playing:
-            transport.stop()            
-        else:
-            transport.start()
+    if event.data2 == 0:  # Only operate on button release        
+        button = event.note
+        
+        #if button == 0x68:  # Up
+        
+        if button == 0x6C:  # Session
+            if Playing:
+                transport.stop()
+            else:
+                transport.start()
+                
+            MuteAll(event)
+            Mode = Modes.Default
             
-        MuteAll(event)
+        if button == 0x6D:  # User 1
+            if Playing:
+                pass
+            else:
+                transport.start()
+            
+            Mode = Modes.User1
+            ui.setHintMsg("Set Hold Mode (User 1)")
         
     event.handled = True
-            
       
 # Outgoing - Ignore
 def OnMidiOutMsg(event):
@@ -198,5 +281,8 @@ beatdict = {
     2: Colors.YellowFull
 }
     
-def OnUpdateBeatIndicator(value):
-    SendMIDI(midi.MIDI_CONTROLCHANGE, 0, 0x6C, beatdict[value].value)
+def OnUpdateBeatIndicator(value):    
+    if Mode == Modes.Default:
+        SendMIDI(midi.MIDI_CONTROLCHANGE, 0, 0x6C, beatdict[value].value)
+    elif Mode == Modes.User1:
+        SendMIDI(midi.MIDI_CONTROLCHANGE, 0, 0x6D, beatdict[value].value)
