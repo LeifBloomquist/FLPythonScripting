@@ -52,7 +52,7 @@ class TLaunchpadText():
         return
 
     def OnInit(self):
-        print('init ready')   
+        print('Init ready')   
         self.Reset()
         
     def Reset(self):
@@ -61,19 +61,19 @@ class TLaunchpadText():
            device.midiOutMsg(0x0300B0)  
 
     def OnDeInit(self):
-        print('deinit ready')
+        print('Deinit ready')
 
     def OnMidiMsg(self, event):
         event.handled = True
-        print ("MIDI IN :: {:X} {:X} {:2X} {}".format(event.status, event.data1, event.data2,  EventNameT[(event.status - 0x80) // 16] + ': '+  utils.GetNoteName(event.data1)))
+        # print ("MIDI IN :: {:X} {:X} {:2X} {}".format(event.status, event.data1, event.data2,  EventNameT[(event.status - 0x80) // 16] + ': '+ utils.GetNoteName(event.data1)))
 
     def OnMidiOutMsg(self, event):
         event.handled = True
         
         if event.midiId == midi.MIDI_NOTEON:
             color = colors.get(event.midiChan)
-            print ("channel =", event.midiChan) 
-            print("color=", color)
+            # print ("channel=", event.midiChan) 
+            # print ("color  =", color)
             # print ("MIDI OUT:: {:X} {:X} {:2X} {}".format(event.status, event.data1, event.data2,  EventNameT[(event.status - 0x80) // 16] + ': '+  utils.GetNoteName(event.data1)))        
             self.ShowCharacter(event.note, color);
             
@@ -91,7 +91,7 @@ class TLaunchpadText():
     
     def ShowCharacter(self, num, color):
         self.Reset()
-        offset = 2048+(num * 8)
+        offset = 2048+(num * 8)    # Change to 0 to use Upper+Graphics Characters
         for row in range(8):
             self.SetLaunchRow(row, CharArray[offset+row], color)
 
